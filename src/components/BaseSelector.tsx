@@ -7,6 +7,8 @@ interface BaseSelectorProps {
   onSelectBase: (base: number) => void;
   numRods: number;
   onChangeNumRods: (rods: number) => void;
+  fractionalRods?: number;
+  onChangeFractionalRods?: (fractionalRods: number) => void;
   disabled?: boolean;
 }
 
@@ -23,6 +25,8 @@ export const BaseSelector: React.FC<BaseSelectorProps> = ({
   onSelectBase,
   numRods,
   onChangeNumRods,
+  fractionalRods = 0,
+  onChangeFractionalRods,
   disabled = false,
 }) => {
   const config = getBaseConfig(currentBase);
@@ -58,37 +62,81 @@ export const BaseSelector: React.FC<BaseSelectorProps> = ({
           })}
         </div>
 
-        {/* Rods Stepper */}
-        <div className="flex items-center gap-3">
+        {/* Rods & Fractions Steppers */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {/* Whole Rods */}
           <div className="flex items-center gap-2 bg-stone-50 border border-stone-200/80 rounded-xl px-3 py-1.5">
             <Layers className="w-4 h-4 text-stone-700" />
-            <span className="text-xs font-medium text-stone-700">Rods:</span>
+            <span className="text-xs font-medium text-stone-700">Whole Rods:</span>
             <span className="font-mono text-xs sm:text-sm font-bold text-stone-800 w-4 text-center">
-              {numRods}
+              {numRods - fractionalRods}
             </span>
             <div className="flex items-center gap-1 ml-1">
               <button
                 id="rods-decrease-btn"
                 type="button"
-                aria-label="Decrease number of rods"
-                disabled={disabled || numRods <= 3}
-                onClick={() => onChangeNumRods(Math.max(3, numRods - 1))}
-                className="w-6 h-6 rounded-md bg-stone-200 hover:bg-stone-300 disabled:opacity-30 disabled:cursor-not-allowed text-stone-800 font-bold flex items-center justify-center text-xs transition-colors"
+                aria-label="Decrease number of whole rods"
+                disabled={disabled || numRods - fractionalRods <= 2}
+                onClick={() => onChangeNumRods(Math.max(fractionalRods + 2, numRods - 1))}
+                className="w-6 h-6 rounded-md bg-stone-200 hover:bg-stone-300 disabled:opacity-30 disabled:cursor-not-allowed text-stone-800 font-bold flex items-center justify-center text-xs transition-colors cursor-pointer"
               >
                 -
               </button>
               <button
                 id="rods-increase-btn"
                 type="button"
-                aria-label="Increase number of rods"
-                disabled={disabled || numRods >= 8}
-                onClick={() => onChangeNumRods(Math.min(8, numRods + 1))}
-                className="w-6 h-6 rounded-md bg-stone-200 hover:bg-stone-300 disabled:opacity-30 disabled:cursor-not-allowed text-stone-800 font-bold flex items-center justify-center text-xs transition-colors"
+                aria-label="Increase number of whole rods"
+                disabled={disabled || numRods >= 9}
+                onClick={() => onChangeNumRods(Math.min(9, numRods + 1))}
+                className="w-6 h-6 rounded-md bg-stone-200 hover:bg-stone-300 disabled:opacity-30 disabled:cursor-not-allowed text-stone-800 font-bold flex items-center justify-center text-xs transition-colors cursor-pointer"
               >
                 +
               </button>
             </div>
           </div>
+
+          {/* Fractional Rods Control */}
+          {onChangeFractionalRods && (
+            <div
+              className={`flex items-center gap-2 rounded-xl px-3 py-1.5 border transition-all ${
+                fractionalRods > 0
+                  ? 'bg-cyan-50/80 border-cyan-300/80 text-cyan-950'
+                  : 'bg-stone-50 border-stone-200/80 text-stone-700'
+              }`}
+            >
+              <span className="font-mono font-bold text-xs">.</span>
+              <span className="text-xs font-medium">Fractional Rods:</span>
+              <span
+                className={`font-mono text-xs sm:text-sm font-bold w-4 text-center ${
+                  fractionalRods > 0 ? 'text-cyan-800' : 'text-stone-800'
+                }`}
+              >
+                {fractionalRods}
+              </span>
+              <div className="flex items-center gap-1 ml-1">
+                <button
+                  id="frac-rods-dec-btn"
+                  type="button"
+                  aria-label="Decrease fractional rods"
+                  disabled={disabled || fractionalRods <= 0}
+                  onClick={() => onChangeFractionalRods(Math.max(0, fractionalRods - 1))}
+                  className="w-6 h-6 rounded-md bg-stone-200 hover:bg-stone-300 disabled:opacity-30 disabled:cursor-not-allowed text-stone-800 font-bold flex items-center justify-center text-xs transition-colors cursor-pointer"
+                >
+                  -
+                </button>
+                <button
+                  id="frac-rods-inc-btn"
+                  type="button"
+                  aria-label="Increase fractional rods"
+                  disabled={disabled || fractionalRods >= 4}
+                  onClick={() => onChangeFractionalRods(Math.min(4, fractionalRods + 1))}
+                  className="w-6 h-6 rounded-md bg-stone-200 hover:bg-stone-300 disabled:opacity-30 disabled:cursor-not-allowed text-stone-800 font-bold flex items-center justify-center text-xs transition-colors cursor-pointer"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

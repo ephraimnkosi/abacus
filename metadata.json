@@ -1,6 +1,6 @@
 {
   "name": "Base Abacus",
-  "description": "An interactive abacus to visualize number bases from binary to base 16, step-by-step arithmetic operations (+, -, *, /), and random practice problems.",
+  "description": "An interactive abacus to visualize number bases from binary to base 16, fractions, decimal radix points, step-by-step arithmetic operations (+, -, *, /), and random practice problems.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -19,10 +19,11 @@ import {
 export default function App() {
   const [mode, setMode] = useState<AppMode>('free');
   const [currentBase, setCurrentBase] = useState<number>(10);
-  const [numRods, setNumRods] = useState<number>(5);
+  const [numRods, setNumRods] = useState<number>(6);
+  const [fractionalRods, setFractionalRods] = useState<number>(2);
 
-  // Free abacus state (rods from 0 = least significant)
-  const [freeRods, setFreeRods] = useState<number[]>(() => new Array(5).fill(0));
+  // Free abacus state (rods from 0 = least significant fractional rod if fractionalRods > 0)
+  const [freeRods, setFreeRods] = useState<number[]>(() => new Array(6).fill(0));
 
   // Audio state
   const [audioOn, setAudioOn] = useState<boolean>(true);
@@ -72,9 +73,12 @@ export default function App() {
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-200">
                   Base 2 → 16
                 </span>
+                <span className="hidden md:inline-block px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-100 text-cyan-900 border border-cyan-200">
+                  Fractions & Decimals
+                </span>
               </div>
               <p className="text-[11px] text-stone-700 hidden sm:block">
-                Interactive positional numeral abacus & arithmetic engine
+                Interactive positional numeral abacus, radix points & fraction arithmetic
               </p>
             </div>
           </div>
@@ -160,7 +164,7 @@ export default function App() {
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-bold flex items-center gap-1.5 text-amber-900">
                 <Sparkles className="w-4 h-4 text-amber-700" />
-                How the Base-N Abacus Works
+                How the Base-N Abacus Works (Integers, Decimals & Fractions)
               </h2>
               <button
                 type="button"
@@ -170,18 +174,22 @@ export default function App() {
                 Dismiss ✕
               </button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2 leading-relaxed">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-2 leading-relaxed">
               <div className="p-3 bg-white/70 rounded-xl border border-amber-200/60">
                 <strong className="block text-amber-900 mb-1">1. Positional Rods</strong>
-                Each rod represents a power of your selected base <span className="font-mono font-bold">B</span>. From right to left: <span className="font-mono">B⁰ = 1</span>, <span className="font-mono">B¹</span>, <span className="font-mono">B²</span>...
+                Each rod represents a power of base <span className="font-mono font-bold">B</span>. Integer rods scale as <span className="font-mono">B⁰ = 1, B¹, B²...</span>
               </div>
               <div className="p-3 bg-white/70 rounded-xl border border-amber-200/60">
-                <strong className="block text-amber-900 mb-1">2. Active Beads & Beam</strong>
-                The brass bar in the middle is the counting beam. Beads touching the beam are active and counted toward that column digit (from <span className="font-mono">0</span> up to <span className="font-mono">B - 1</span>).
+                <strong className="block text-cyan-900 mb-1">2. Radix Point & Fractions</strong>
+                The vertical dashed divider marks the radix point (<span className="font-mono font-bold">.</span>). Rods to its right represent fractional negative powers: <span className="font-mono">B⁻¹ = 1/B, B⁻² = 1/B²...</span>
               </div>
               <div className="p-3 bg-white/70 rounded-xl border border-amber-200/60">
-                <strong className="block text-amber-900 mb-1">3. Carrying & Operations</strong>
-                When a rod accumulates <span className="font-mono">B</span> beads, it overflows! Those <span className="font-mono">B</span> beads collapse into <span className="font-mono">1</span> bead on the next rod to the left.
+                <strong className="block text-amber-900 mb-1">3. Active Beads & Beam</strong>
+                The brass bar in the middle is the counting beam. Beads pushed toward the beam are active digits (from <span className="font-mono">0</span> to <span className="font-mono">B - 1</span>).
+              </div>
+              <div className="p-3 bg-white/70 rounded-xl border border-amber-200/60">
+                <strong className="block text-amber-900 mb-1">4. Carries & Borrowing</strong>
+                When a rod accumulates <span className="font-mono">B</span> beads, it rolls over: carries flow naturally across the radix point between fractional and whole places!
               </div>
             </div>
           </div>
@@ -193,6 +201,8 @@ export default function App() {
           onSelectBase={setCurrentBase}
           numRods={numRods}
           onChangeNumRods={setNumRods}
+          fractionalRods={fractionalRods}
+          onChangeFractionalRods={setFractionalRods}
         />
 
         {/* View Mode 1: Free Exploration Abacus */}
@@ -205,12 +215,13 @@ export default function App() {
                   Interactive Abacus Surface:
                 </span>
                 <span className="text-xs text-stone-700">
-                  Click beads or use + / - to set values
+                  Click beads to slide them to the beam, or enter decimals/fractions below
                 </span>
               </div>
               <Abacus
                 base={currentBase}
                 numRods={numRods}
+                fractionalRods={fractionalRods}
                 rodValues={freeRods}
                 onChangeRodValue={(rodIndex, newVal) => {
                   const updated = [...freeRods];
@@ -224,6 +235,7 @@ export default function App() {
             <ConversionBar
               base={currentBase}
               numRods={numRods}
+              fractionalRods={fractionalRods}
               rodValues={freeRods}
               onChangeRods={setFreeRods}
             />
@@ -235,6 +247,7 @@ export default function App() {
           <OperationVisualizer
             base={currentBase}
             numRods={numRods}
+            fractionalRods={fractionalRods}
           />
         )}
 
@@ -243,6 +256,7 @@ export default function App() {
           <PracticeMode
             base={currentBase}
             numRods={numRods}
+            fractionalRods={fractionalRods}
             onOpenVisualizerWithProblem={handleOpenVisualizerWithProblem}
           />
         )}
@@ -252,7 +266,7 @@ export default function App() {
       <footer className="mt-auto border-t border-stone-200/80 bg-white/70 py-4 px-4 text-center text-xs text-stone-700">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>Base Abacus — Positional Numeral Arithmetic in Bases 2 through 16</span>
-          <span className="text-stone-700">Tactile counting beam, step-by-step carries, and problem testing</span>
+          <span className="text-stone-700">Exact fractions, decimal radix points, step-by-step carries & practice challenges</span>
         </div>
       </footer>
     </div>

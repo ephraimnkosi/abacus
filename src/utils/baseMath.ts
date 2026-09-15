@@ -4,6 +4,7 @@
  */
 
 import { BaseConfig, ArithmeticStep, PracticeProblem, OperationType } from '../types';
+import { getPrimeFactors } from './fractionMath';
 
 export const BASE_CONFIGS: Record<number, BaseConfig> = {
   2: {
@@ -146,79 +147,214 @@ export function valueToChar(val: number): string {
 }
 
 /**
- * Convert decimal number to array of rod values (index 0 is least significant rod, i.e. base^0)
+ * Convert decimal number to array of rod values
+ * Index 0 is the lowest power rod: power = 0 - fractionalRods.
+ * Total rods = numRods.
  */
-export function decimalToRods(decimalVal: number, base: number, numRods: number): number[] {
+export function decimalToRods(
+  decimalVal: number,
+  base: number,
+  numRods: number,
+  fractionalRods: number = 0
+): number[] {
   const rods = new Array(numRods).fill(0);
-  let remaining = Math.max(0, Math.floor(decimalVal));
+  if (isNaN(decimalVal) || decimalVal <= 0) return rods;
 
-  for (let i = 0; i < numRods; i++) {
-    if (remaining === 0) break;
-    rods[i] = remaining % base;
-    remaining = Math.floor(remaining / base);
+  const intPart = Math.floor(decimalVal);
+  const fracPart = decimalVal - intPart;
+
+  // Fill integer rods (indices fractionalRods up to numRods - 1)
+  const integerStartIndex = fractionalRods;
+  let remainingInt = intPart;
+  for (let i = integerStartIndex; i < numRods; i++) {
+    if (remainingInt === 0) break;
+    rods[i] = remainingInt % base;
+    remainingInt = Math.floor(remainingInt / base);
+  }
+
+  // Fill fractional rods (indices fractionalRods - 1 down to 0)
+  // Rod at index fractionalRods - 1 has power -1
+  // Rod at index 0 has power -fractionalRods
+  if (fractionalRods > 0 && fracPart > 1e-11) {
+    let remFrac = fracPart;
+    for (let f = 1; f <= fractionalRods; f++) {
+      const rodIdx = fractionalRods - f;
+      remFrac = remFrac * base;
+      const digit = Math.floor(remFrac + 1e-9);
+      rods[rodIdx] = Math.min(base - 1, digit);
+      remFrac = remFrac - digit;
+      if (remFrac < 1e-11) break;
+    }
   }
 
   return rods;
 }
 
 /**
- * Convert array of rod values (index 0 = base^0) back to decimal integer
+ * Convert array of rod values back to decimal number
+ * Rod index i has power = i - fractionalRods
  */
-export function rodsToDecimal(rods: number[], base: number): number {
+export function rodsToDecimal(
+  rods: number[],
+  base: number,
+  fractionalRods: number = 0
+): number {
   let total = 0;
   for (let i = 0; i < rods.length; i++) {
-    total += rods[i] * Math.pow(base, i);
+    const power = i - fractionalRods;
+    total += (rods[i] || 0) * Math.pow(base, power);
   }
-  return total;
+  // Round to avoid IEEE 754 precision drift
+  return Math.round(total * 1e9) / 1e9;
 }
 
 /**
- * Convert decimal number to string representation in given base
+ * Convert decimal number to string representation in given base with optional radix point
  */
-export function decimalToBaseString(decimalVal: number, base: number): string {
+export function decimalToBaseString(
+  decimalVal: number,
+  base: number,
+  maxFractionDigits: number = 6
+): string {
+  if (isNaN(decimalVal)) return '0';
   if (decimalVal === 0) return '0';
-  let num = Math.abs(Math.floor(decimalVal));
-  let result = '';
-  while (num > 0) {
-    const rem = num % base;
-    result = valueToChar(rem) + result;
-    num = Math.floor(num / base);
+
+  const isNeg = decimalVal < 0;
+  const absVal = Math.abs(decimalVal);
+  let intPart = Math.floor(absVal);
+  const fracPart = absVal - intPart;
+
+  let intStr = '';
+  if (intPart === 0) {
+    intStr = '0';
+  } else {
+    while (intPart > 0) {
+      const rem = intPart % base;
+      intStr = valueToChar(rem) + intStr;
+      intPart = Math.floor(intPart / base);
+    }
   }
-  return decimalVal < 0 ? '-' + result : result;
+
+  let fracStr = '';
+  if (fracPart > 1e-9 && maxFractionDigits > 0) {
+    let remFrac = fracPart;
+    for (let i = 0; i < maxFractionDigits; i++) {
+      if (remFrac < 1e-9) break;
+      remFrac = remFrac * base;
+      const digit = Math.floor(remFrac + 1e-9);
+      fracStr += valueToChar(Math.min(base - 1, digit));
+      remFrac = remFrac - digit;
+    }
+    // Trim trailing zeros
+    fracStr = fracStr.replace(/0+$/, '');
+  }
+
+  const result = fracStr ? `${intStr}.${fracStr}` : intStr;
+  return isNeg ? '-' + result : result;
 }
 
 /**
- * Convert string in given base to decimal number
+ * Convert string in given base (supports integers, radix points, and fractions like "3/4") to decimal number
  */
 export function baseStringToDecimal(str: string, base: number): number {
   const clean = str.trim().toUpperCase();
   if (!clean) return 0;
+
+  // Check for fraction format like "3/4" or "1 1/2"
+  if (clean.includes('/')) {
+    const slashIdx = clean.indexOf('/');
+    const leftStr = clean.slice(0, slashIdx).trim();
+    const rightStr = clean.slice(slashIdx + 1).trim();
+
+    let wholeDec = 0;
+    let numStr = leftStr;
+    if (leftStr.includes(' ')) {
+      const parts = leftStr.split(/\s+/);
+      wholeDec = baseStringToDecimal(parts[0], base);
+      numStr = parts[1];
+    }
+    const numDec = baseStringToDecimal(numStr, base);
+    const denDec = baseStringToDecimal(rightStr, base);
+    if (!isNaN(numDec) && !isNaN(denDec) && denDec !== 0) {
+      return wholeDec + numDec / denDec;
+    }
+    return NaN;
+  }
+
+  const isNeg = clean.startsWith('-');
+  const unsigned = isNeg ? clean.slice(1) : clean;
+
+  const dotIdx = unsigned.indexOf('.');
+  if (dotIdx === -1) {
+    let total = 0;
+    for (let i = 0; i < unsigned.length; i++) {
+      const val = charToValue(unsigned[i]);
+      if (val >= base) return NaN; // invalid digit for base
+      total = total * base + val;
+    }
+    return isNeg ? -total : total;
+  }
+
+  const intPartStr = unsigned.slice(0, dotIdx);
+  const fracPartStr = unsigned.slice(dotIdx + 1);
+
   let total = 0;
-  for (let i = 0; i < clean.length; i++) {
-    const val = charToValue(clean[i]);
-    if (val >= base) return NaN; // invalid digit for base
+  for (let i = 0; i < intPartStr.length; i++) {
+    const val = charToValue(intPartStr[i]);
+    if (val >= base) return NaN;
     total = total * base + val;
   }
-  return total;
+
+  for (let i = 0; i < fracPartStr.length; i++) {
+    const val = charToValue(fracPartStr[i]);
+    if (val >= base) return NaN;
+    total += val * Math.pow(base, -(i + 1));
+  }
+
+  const finalVal = isNeg ? -total : total;
+  return Math.round(finalVal * 1e9) / 1e9;
 }
 
 /**
- * Get polynomial expansion breakdown for display
+ * Get polynomial expansion breakdown for display (supports negative powers / fractional rods)
  */
-export function getPolynomialExpansion(rods: number[], base: number) {
-  const terms: { digit: number; digitChar: string; power: number; placeVal: number; totalVal: number }[] = [];
-  
-  // From highest power down to 0
+export function getPolynomialExpansion(
+  rods: number[],
+  base: number,
+  fractionalRods: number = 0
+) {
+  const terms: {
+    digit: number;
+    digitChar: string;
+    power: number;
+    placeVal: number;
+    fractionLabel?: string;
+    totalVal: number;
+    isFractional: boolean;
+  }[] = [];
+
+  // From highest power down to lowest power
   for (let i = rods.length - 1; i >= 0; i--) {
-    const digit = rods[i];
-    if (digit > 0 || terms.length > 0 || i === 0) {
-      const placeVal = Math.pow(base, i);
+    const digit = rods[i] || 0;
+    const power = i - fractionalRods;
+    const placeVal = Math.pow(base, power);
+    const isFractional = power < 0;
+
+    let fractionLabel: string | undefined = undefined;
+    if (isFractional) {
+      const denom = Math.round(Math.pow(base, -power));
+      fractionLabel = `1/${denom}`;
+    }
+
+    if (digit > 0 || terms.length > 0 || power === 0) {
       terms.push({
         digit,
         digitChar: valueToChar(digit),
-        power: i,
+        power,
         placeVal,
+        fractionLabel,
         totalVal: digit * placeVal,
+        isFractional,
       });
     }
   }
@@ -232,37 +368,47 @@ export function getPolynomialExpansion(rods: number[], base: number) {
 /**
  * Generate step-by-step addition on the abacus
  */
-export function generateAdditionSteps(a: number, b: number, base: number, numRods: number): ArithmeticStep[] {
+export function generateAdditionSteps(
+  a: number,
+  b: number,
+  base: number,
+  numRods: number,
+  fractionalRods: number = 0
+): ArithmeticStep[] {
   const steps: ArithmeticStep[] = [];
-  const rodsA = decimalToRods(a, base, numRods);
-  const rodsB = decimalToRods(b, base, numRods);
+  const rodsA = decimalToRods(a, base, numRods, fractionalRods);
+  const rodsB = decimalToRods(b, base, numRods, fractionalRods);
   const currentRods = [...rodsA];
 
   const strA = decimalToBaseString(a, base);
   const strB = decimalToBaseString(b, base);
-  const sum = a + b;
+  const sum = Math.round((a + b) * 1e9) / 1e9;
   const strSum = decimalToBaseString(sum, base);
 
   // Step 0: Initialize
   steps.push({
     stepIndex: 0,
-    totalSteps: 1, // updated at end
+    totalSteps: 1,
     title: 'Initialize Abacus with Operand A',
-    description: `Place the first operand ${strA}₍${base}₎ (${a} in decimal) onto the abacus rods.`,
+    description: `Place the first operand ${strA}₍${base}₎ (${a} in decimal) onto the abacus rods.${
+      fractionalRods > 0 ? ` (Including ${fractionalRods} fractional rod${fractionalRods > 1 ? 's' : ''})` : ''
+    }`,
     mathDetail: `Operand A = ${strA}₍${base}₎, Operand B = ${strB}₍${base}₎`,
     currentRodIndex: 0,
     abacusState: [...currentRods],
     highlightRods: [],
+    fractionalRods,
   });
 
   let carry = 0;
-  // Iterate through each rod from least significant (0) to highest
+  // Iterate through each rod from lowest power (0) to highest
   for (let i = 0; i < numRods; i++) {
+    const power = i - fractionalRods;
+    const isFractional = power < 0;
     const digitB = rodsB[i] || 0;
     const digitA = currentRods[i] || 0;
 
-    if (digitB === 0 && carry === 0 && i > 0 && rodsToDecimal(currentRods, base) === sum) {
-      // Nothing left to add
+    if (digitB === 0 && carry === 0 && i > fractionalRods && rodsToDecimal(currentRods, base, fractionalRods) === sum) {
       break;
     }
 
@@ -271,9 +417,10 @@ export function generateAdditionSteps(a: number, b: number, base: number, numRod
     const newDigit = totalAtRod % base;
     const nextCarry = Math.floor(totalAtRod / base);
 
-    // Step 1: Add digit and previous carry to rod
-    const placeVal = Math.pow(base, i);
-    const powerLabel = `${base}^${i} (${placeVal})`;
+    const placeVal = Math.pow(base, power);
+    const powerLabel = isFractional
+      ? `${base}^(${power}) = 1/${Math.round(Math.pow(base, -power))}`
+      : `${base}^${power} (${placeVal})`;
 
     let desc = `Rod ${i} [${powerLabel}]: Current bead count is ${valueToChar(initialDigit)}. `;
     if (carry > 0) {
@@ -289,17 +436,24 @@ export function generateAdditionSteps(a: number, b: number, base: number, numRod
 
     currentRods[i] = newDigit;
 
+    const isCrossingRadix = i === fractionalRods - 1 && nextCarry > 0;
+
     steps.push({
       stepIndex: steps.length,
       totalSteps: 0,
-      title: `Rod ${i} (${base}ᵖᵒʷᵉʳ ${i}): Add ${valueToChar(digitB)}${carry ? ` + carry ${carry}` : ''}`,
+      title: `Rod ${i} (${isFractional ? 'Fractional ' : ''}${base}ᵖᵒʷᵉʳ ${power}): Add ${valueToChar(digitB)}${carry ? ` + carry ${carry}` : ''}`,
       description: desc,
       mathDetail: `${valueToChar(initialDigit)} + ${valueToChar(digitB)}${carry ? ` + ${carry}` : ''} = ${totalAtRod}₍₁₀₎ = ${nextCarry ? `${nextCarry}×${base} + ` : ''}${newDigit} → digit is ${valueToChar(newDigit)}${nextCarry ? `, carry ${nextCarry}` : ''}`,
       currentRodIndex: i,
       abacusState: [...currentRods],
       highlightRods: nextCarry ? [i, i + 1] : [i],
       carryOrBorrowValue: nextCarry,
-      intermediateNote: nextCarry ? `Carry +${nextCarry} to rod ${i + 1}` : undefined,
+      intermediateNote: isCrossingRadix
+        ? `Carry +${nextCarry} across radix point into whole units rod (base^0)!`
+        : nextCarry
+        ? `Carry +${nextCarry} to rod ${i + 1}`
+        : undefined,
+      fractionalRods,
     });
 
     carry = nextCarry;
@@ -315,77 +469,84 @@ export function generateAdditionSteps(a: number, b: number, base: number, numRod
     currentRodIndex: -1,
     abacusState: [...currentRods],
     isComplete: true,
+    fractionalRods,
   });
 
-  // Set totalSteps
   const total = steps.length;
-  steps.forEach(s => (s.totalSteps = total));
+  steps.forEach((s) => (s.totalSteps = total));
   return steps;
 }
 
 /**
  * Generate step-by-step subtraction on the abacus
  */
-export function generateSubtractionSteps(a: number, b: number, base: number, numRods: number): ArithmeticStep[] {
-  // Ensure non-negative for standard abacus demonstration
+export function generateSubtractionSteps(
+  a: number,
+  b: number,
+  base: number,
+  numRods: number,
+  fractionalRods: number = 0
+): ArithmeticStep[] {
   if (a < b) {
-    // swap for intuitive visual, or handle swap note
-    return generateSubtractionSteps(b, a, base, numRods);
+    return generateSubtractionSteps(b, a, base, numRods, fractionalRods);
   }
 
   const steps: ArithmeticStep[] = [];
-  const rodsA = decimalToRods(a, base, numRods);
-  const rodsB = decimalToRods(b, base, numRods);
+  const rodsA = decimalToRods(a, base, numRods, fractionalRods);
+  const rodsB = decimalToRods(b, base, numRods, fractionalRods);
   const currentRods = [...rodsA];
 
   const strA = decimalToBaseString(a, base);
   const strB = decimalToBaseString(b, base);
-  const diff = a - b;
+  const diff = Math.round((a - b) * 1e9) / 1e9;
   const strDiff = decimalToBaseString(diff, base);
 
   steps.push({
     stepIndex: 0,
     totalSteps: 1,
     title: 'Initialize Abacus with Minuend A',
-    description: `Place the starting number ${strA}₍${base}₎ (${a} in decimal) onto the abacus rods.`,
+    description: `Place the starting number ${strA}₍${base}₎ (${a} in decimal) onto the abacus rods.${
+      fractionalRods > 0 ? ` (Including ${fractionalRods} fractional rod${fractionalRods > 1 ? 's' : ''})` : ''
+    }`,
     mathDetail: `A = ${strA}₍${base}₎ (${a}), B = ${strB}₍${base}₎ (${b})`,
     currentRodIndex: 0,
     abacusState: [...currentRods],
+    fractionalRods,
   });
 
   let borrow = 0;
   for (let i = 0; i < numRods; i++) {
+    const power = i - fractionalRods;
+    const isFractional = power < 0;
     const digitB = rodsB[i] || 0;
     const initialDigit = currentRods[i];
     const needed = digitB + borrow;
 
-    if (digitB === 0 && borrow === 0 && i > 0 && rodsToDecimal(currentRods, base) === diff) {
+    if (digitB === 0 && borrow === 0 && i > fractionalRods && rodsToDecimal(currentRods, base, fractionalRods) === diff) {
       break;
     }
 
     if (initialDigit < needed) {
-      // Need to borrow from higher rod
-      // Find next rod with beads
       let nextRod = i + 1;
       while (nextRod < numRods && currentRods[nextRod] === 0) {
         nextRod++;
       }
 
-      const placeVal = Math.pow(base, i);
+      const placeVal = Math.pow(base, power);
       steps.push({
         stepIndex: steps.length,
         totalSteps: 0,
-        title: `Rod ${i}: Borrow from Rod ${i + 1}`,
-        description: `Rod ${i} has ${valueToChar(initialDigit)} beads, but needs to subtract ${needed} (${digitB}${borrow ? ` + borrow 1` : ''}). We borrow 1 bead from Rod ${i + 1}, giving +${base} beads to Rod ${i}!`,
-        mathDetail: `Digit ${valueToChar(initialDigit)} < ${needed}. Borrow 1 from ${base}^${i + 1} (value ${Math.pow(base, i + 1)}), adding ${base} to rod ${i} (value ${placeVal}).`,
+        title: `Rod ${i} (${isFractional ? 'Fractional ' : ''}Power ${power}): Borrow from Rod ${i + 1}`,
+        description: `Rod ${i} has ${valueToChar(initialDigit)} beads, but needs to subtract ${needed}. We borrow 1 bead from Rod ${i + 1}, adding +${base} beads to Rod ${i}!`,
+        mathDetail: `Digit ${valueToChar(initialDigit)} < ${needed}. Borrow 1 from higher rod, adding ${base} to rod ${i}.`,
         currentRodIndex: i,
         abacusState: [...currentRods],
         highlightRods: [i, i + 1],
         carryOrBorrowValue: -1,
         intermediateNote: `Borrowing 1 from rod ${i + 1}`,
+        fractionalRods,
       });
 
-      // Execute borrow
       currentRods[i + 1] -= 1;
       const newDigit = initialDigit + base - needed;
       currentRods[i] = newDigit;
@@ -400,6 +561,7 @@ export function generateSubtractionSteps(a: number, b: number, base: number, num
         currentRodIndex: i,
         abacusState: [...currentRods],
         highlightRods: [i],
+        fractionalRods,
       });
     } else {
       const newDigit = initialDigit - needed;
@@ -415,6 +577,7 @@ export function generateSubtractionSteps(a: number, b: number, base: number, num
         currentRodIndex: i,
         abacusState: [...currentRods],
         highlightRods: [i],
+        fractionalRods,
       });
     }
   }
@@ -428,10 +591,11 @@ export function generateSubtractionSteps(a: number, b: number, base: number, num
     currentRodIndex: -1,
     abacusState: [...currentRods],
     isComplete: true,
+    fractionalRods,
   });
 
   const total = steps.length;
-  steps.forEach(s => (s.totalSteps = total));
+  steps.forEach((s) => (s.totalSteps = total));
   return steps;
 }
 
@@ -603,7 +767,7 @@ export function generatePracticeProblem(
   base: number,
   operation: OperationType = '+',
   difficulty: 'easy' | 'medium' | 'hard' = 'medium',
-  type: 'arithmetic' | 'read_abacus' | 'set_abacus' = 'arithmetic'
+  type: 'arithmetic' | 'read_abacus' | 'set_abacus' | 'fraction_convert' | 'terminating_check' = 'arithmetic'
 ): PracticeProblem {
   const id = `prob_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   let opA = 0;
@@ -612,6 +776,95 @@ export function generatePracticeProblem(
   let prompt = '';
   const hints: string[] = [];
   let explanation = '';
+
+  // Fraction Conversion Problem
+  if (type === 'fraction_convert') {
+    const pool = [
+      { n: 1, d: 2, label: '1/2', dec: 0.5 },
+      { n: 1, d: 4, label: '1/4', dec: 0.25 },
+      { n: 3, d: 4, label: '3/4', dec: 0.75 },
+      { n: 1, d: 8, label: '1/8', dec: 0.125 },
+      { n: 3, d: 8, label: '3/8', dec: 0.375 },
+      { n: 5, d: 8, label: '5/8', dec: 0.625 },
+      { n: 7, d: 8, label: '7/8', dec: 0.875 },
+      { n: 1, d: base, label: `1/${base}`, dec: 1 / base },
+      { n: Math.floor(base / 2), d: base, label: `${Math.floor(base / 2)}/${base}`, dec: Math.floor(base / 2) / base },
+      { n: 1, d: 16, label: '1/16', dec: 0.0625 },
+    ];
+
+    // Filter candidates that terminate cleanly in this base or have <= 3 radix digits
+    const valid = pool.filter((c) => {
+      const s = decimalToBaseString(c.dec, base, 4);
+      return s.includes('.') && s.split('.')[1].length <= 3;
+    });
+    const chosen = (valid.length > 0 ? valid : pool)[
+      Math.floor(Math.random() * (valid.length > 0 ? valid.length : pool.length))
+    ];
+    const correctBaseStr = decimalToBaseString(chosen.dec, base, 4);
+
+    prompt = `Convert the fraction ${chosen.label} (decimal ${chosen.dec}) to Base ${base} with a radix point:`;
+    hints.push(`Multiply the fraction by ${base}: ${chosen.dec} × ${base} = ${(chosen.dec * base).toFixed(3)}.`);
+    hints.push(`The integer part of the product gives the first digit after the radix point.`);
+    hints.push(`In Base ${base}, 1/${base} is written as 0.1.`);
+    explanation = `${chosen.label} (${chosen.dec}) in Base ${base} is ${correctBaseStr}₍${base}₎.`;
+
+    return {
+      id,
+      type: 'fraction_convert',
+      base,
+      operandA: chosen.dec,
+      correctAnswer: correctBaseStr,
+      correctAnswerDecimal: chosen.dec,
+      questionPrompt: prompt,
+      difficulty,
+      hints,
+      explanation,
+      fractionLabel: chosen.label,
+      isFraction: true,
+    };
+  }
+
+  // Terminating vs Repeating Check Problem
+  if (type === 'terminating_check') {
+    const fractionsPool = [
+      { n: 1, d: 2, label: '1/2' },
+      { n: 1, d: 3, label: '1/3' },
+      { n: 1, d: 4, label: '1/4' },
+      { n: 1, d: 5, label: '1/5' },
+      { n: 1, d: 6, label: '1/6' },
+      { n: 1, d: 8, label: '1/8' },
+      { n: 1, d: 10, label: '1/10' },
+      { n: 3, d: 16, label: '3/16' },
+      { n: 1, d: 12, label: '1/12' },
+    ];
+    const pick = fractionsPool[Math.floor(Math.random() * fractionsPool.length)];
+    const qFactors = Array.from(new Set(getPrimeFactors(pick.d)));
+    const doesTerminate = qFactors.every((f) => base % f === 0);
+    const correctAns = doesTerminate ? 'TERMINATING' : 'REPEATING';
+
+    prompt = `Does the fraction ${pick.label} have a TERMINATING or REPEATING radix expansion in Base ${base}?`;
+    hints.push(`Prime factor(s) of denominator ${pick.d}: [${qFactors.join(', ')}].`);
+    hints.push(`A fraction terminates in Base ${base} if and only if all prime factors of its denominator divide ${base}.`);
+    hints.push(`Does ${base} divide cleanly by every factor in [${qFactors.join(', ')}]?`);
+    explanation = doesTerminate
+      ? `${pick.label} TERMINATES in Base ${base} because prime factor(s) [${qFactors.join(', ')}] divide ${base}.`
+      : `${pick.label} REPEATS infinitely in Base ${base} because denominator contains prime factor(s) not dividing ${base}.`;
+
+    return {
+      id,
+      type: 'terminating_check',
+      base,
+      operandA: pick.n / pick.d,
+      correctAnswer: correctAns,
+      correctAnswerDecimal: doesTerminate ? 1 : 0,
+      questionPrompt: prompt,
+      difficulty,
+      hints,
+      explanation,
+      fractionLabel: pick.label,
+      isFraction: true,
+    };
+  }
 
   // Max value scale depending on base and difficulty
   const baseRange = {

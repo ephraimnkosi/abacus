@@ -24,9 +24,14 @@ import {
 interface OperationVisualizerProps {
   base: number;
   numRods: number;
+  fractionalRods?: number;
 }
 
-export const OperationVisualizer: React.FC<OperationVisualizerProps> = ({ base, numRods }) => {
+export const OperationVisualizer: React.FC<OperationVisualizerProps> = ({
+  base,
+  numRods,
+  fractionalRods = 0,
+}) => {
   const [operation, setOperation] = useState<OperationType>('+');
   const [inputA, setInputA] = useState<string>('');
   const [inputB, setInputB] = useState<string>('');
@@ -39,7 +44,18 @@ export const OperationVisualizer: React.FC<OperationVisualizerProps> = ({ base, 
 
   // Set default initial operands appropriate for the base
   useEffect(() => {
-    if (base === 2) {
+    if (fractionalRods > 0) {
+      if (base === 2) {
+        setInputA('10.1');
+        setInputB('01.1');
+      } else if (base === 10) {
+        setInputA('2.5');
+        setInputB('1.75');
+      } else {
+        setInputA(`2.${Math.floor(base / 2)}`);
+        setInputB(`1.${Math.floor(base / 2)}`);
+      }
+    } else if (base === 2) {
       setInputA('1011');
       setInputB('0110');
     } else if (base === 16) {
@@ -55,9 +71,9 @@ export const OperationVisualizer: React.FC<OperationVisualizerProps> = ({ base, 
     }
     setCurrentStepIndex(0);
     setIsPlaying(false);
-  }, [base, operation]);
+  }, [base, operation, fractionalRods]);
 
-  // Parse inputs to decimal
+  // Parse inputs to decimal (supports fractional radix point)
   const decA = useMemo(() => {
     return baseStringToDecimal(inputA, base);
   }, [inputA, base]);
@@ -74,9 +90,9 @@ export const OperationVisualizer: React.FC<OperationVisualizerProps> = ({ base, 
 
     try {
       if (operation === '+') {
-        return generateAdditionSteps(decA, decB, base, numRods);
+        return generateAdditionSteps(decA, decB, base, numRods, fractionalRods);
       } else if (operation === '-') {
-        return generateSubtractionSteps(decA, decB, base, numRods);
+        return generateSubtractionSteps(decA, decB, base, numRods, fractionalRods);
       } else if (operation === '*') {
         return generateMultiplicationSteps(decA, decB, base, numRods);
       } else if (operation === '/') {
@@ -86,7 +102,7 @@ export const OperationVisualizer: React.FC<OperationVisualizerProps> = ({ base, 
       return [];
     }
     return [];
-  }, [decA, decB, base, numRods, operation]);
+  }, [decA, decB, base, numRods, fractionalRods, operation]);
 
   const currentStep: ArithmeticStep | undefined = steps[currentStepIndex];
 
@@ -134,10 +150,22 @@ export const OperationVisualizer: React.FC<OperationVisualizerProps> = ({ base, 
     setCurrentStepIndex(0);
   };
 
-  const handleApplyPreset = (type: 'carry' | 'borrow' | 'multi' | 'div') => {
+  const handleApplyPreset = (type: 'carry' | 'borrow' | 'multi' | 'div' | 'frac-carry') => {
     setIsPlaying(false);
     setErrorMsg(null);
-    if (type === 'carry') {
+    if (type === 'frac-carry') {
+      setOperation('+');
+      if (base === 2) {
+        setInputA('1.1');
+        setInputB('0.1');
+      } else if (base === 10) {
+        setInputA('3.8');
+        setInputB('2.7');
+      } else {
+        setInputA(`1.${base - 1}`);
+        setInputB(`0.${base - 1}`);
+      }
+    } else if (type === 'carry') {
       setOperation('+');
       const valA = base * 2 - 2;
       const valB = base + 3;
@@ -168,10 +196,17 @@ export const OperationVisualizer: React.FC<OperationVisualizerProps> = ({ base, 
 
   const validateInput = (val: string, setter: (v: string) => void) => {
     const clean = val.trim().toUpperCase();
-    for (const ch of clean) {
-      if (charToValue(ch) >= base) {
-        setErrorMsg(`Digit '${ch}' is not valid in base ${base}`);
-        return;
+    const parts = clean.split('.');
+    if (parts.length > 2) {
+      setErrorMsg('Invalid format: multiple radix points');
+      return;
+    }
+    for (const part of parts) {
+      for (const ch of part) {
+        if (charToValue(ch) >= base) {
+          setErrorMsg(`Digit '${ch}' is not valid in base ${base}`);
+          return;
+        }
       }
     }
     setErrorMsg(null);
@@ -243,6 +278,16 @@ export const OperationVisualizer: React.FC<OperationVisualizerProps> = ({ base, 
             <span className="text-xs text-stone-700 font-medium mr-1 flex items-center gap-1">
               <Sparkles className="w-3.5 h-3.5 text-amber-800" /> Demos:
             </span>
+            {fractionalRods > 0 && (
+              <button
+                id="demo-frac-carry-btn"
+                type="button"
+                onClick={() => handleApplyPreset('frac-carry')}
+                className="px-2.5 py-1 bg-cyan-100 hover:bg-cyan-200 text-cyan-900 border border-cyan-300 rounded-md text-xs font-semibold cursor-pointer"
+              >
+                Radix Carry ( . )
+              </button>
+            )}
             <button
               id="demo-carry-btn"
               type="button"
@@ -463,6 +508,7 @@ export const OperationVisualizer: React.FC<OperationVisualizerProps> = ({ base, 
         <Abacus
           base={base}
           numRods={numRods}
+          fractionalRods={fractionalRods}
           rodValues={currentStep ? currentStep.abacusState : new Array(numRods).fill(0)}
           highlightRods={currentStep ? currentStep.highlightRods : []}
           carryBorrowBadge={carryBadge}

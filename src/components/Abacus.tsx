@@ -7,7 +7,8 @@ import { ChevronUp, ChevronDown } from 'lucide-react';
 interface AbacusProps {
   base: number;
   numRods: number;
-  rodValues: number[]; // Array of length numRods, index 0 is least significant (rightmost rod)
+  rodValues: number[]; // Array of length numRods, index 0 is lowest power (power = 0 - fractionalRods)
+  fractionalRods?: number;
   onChangeRodValue?: (rodIndex: number, newValue: number) => void;
   highlightRods?: number[];
   readOnly?: boolean;
@@ -18,6 +19,7 @@ export const Abacus: React.FC<AbacusProps> = ({
   base,
   numRods,
   rodValues,
+  fractionalRods = 0,
   onChangeRodValue,
   highlightRods = [],
   readOnly = false,
@@ -30,16 +32,10 @@ export const Abacus: React.FC<AbacusProps> = ({
     if (readOnly || !onChangeRodValue) return;
 
     const currentActive = rodValues[rodIndex] || 0;
-    // beadIndexFromBeam is 0-indexed distance from the counting beam
-    // If user clicks a bead that is currently active:
-    // If they click the highest active bead, or any active bead, we can set active beads to beadIndexFromBeam
-    // If they click an inactive bead (beyond currentActive), we set active beads to beadIndexFromBeam + 1
     let nextValue: number;
     if (beadIndexFromBeam < currentActive) {
-      // It's currently active. Clicking it deactivates it and beads above it
       nextValue = beadIndexFromBeam;
     } else {
-      // It's currently inactive. Clicking it activates up to this bead
       nextValue = beadIndexFromBeam + 1;
     }
 
@@ -68,15 +64,25 @@ export const Abacus: React.FC<AbacusProps> = ({
     }
   };
 
-  // The rods are physically displayed from highest power (left) to lowest power (right, base^0)
+  // The rods are physically displayed from highest power (left) to lowest power (right)
   const rodIndices = Array.from({ length: numRods }, (_, i) => numRods - 1 - i);
 
   // Height calculations for beads:
-  // Dynamically size bead height depending on base (bases with up to 15 beads need compact bead heights)
   const beadHeightPx = base > 10 ? 15 : base > 6 ? 20 : 26;
   const beadGapPx = 2;
   const activeZoneHeightPx = Math.max(70, maxBeadsPerRod * (beadHeightPx + beadGapPx) + 12);
   const inactiveZoneHeightPx = Math.max(70, maxBeadsPerRod * (beadHeightPx + beadGapPx) + 12);
+
+  const radixName =
+    base === 2
+      ? 'Binary Point'
+      : base === 8
+      ? 'Octal Point'
+      : base === 10
+      ? 'Decimal Point'
+      : base === 16
+      ? 'Hex Point'
+      : `Base-${base} Point`;
 
   return (
     <div className="w-full select-none" id="abacus-container">
@@ -85,176 +91,280 @@ export const Abacus: React.FC<AbacusProps> = ({
         <div className="min-w-fit mx-auto inline-block p-3 sm:p-5 bg-gradient-to-b from-stone-800 via-stone-900 to-stone-950 rounded-2xl sm:rounded-3xl shadow-xl border-4 border-amber-950/80">
           {/* Inner Abacus Border & Inlay */}
           <div className="relative bg-gradient-to-b from-stone-900/90 to-stone-950/95 rounded-xl border-2 border-amber-900/60 p-3 sm:p-4 shadow-inner">
-            
             {/* Horizontal Beams and Frame Accents */}
             <div className="flex items-start justify-center gap-2 sm:gap-4 md:gap-6">
               {rodIndices.map((rodIndex) => {
+                const power = rodIndex - fractionalRods;
+                const isFractional = power < 0;
                 const activeCount = rodValues[rodIndex] || 0;
-                const placeVal = Math.pow(base, rodIndex);
+                const placeVal = Math.pow(base, power);
                 const isHighlighted = highlightRods.includes(rodIndex);
                 const isCarryBorrow = carryBorrowBadge && carryBorrowBadge.rodIndex === rodIndex;
 
+                // Show radix point separator immediately before the first fractional rod (power === -1)
+                const showRadixPointDivider = fractionalRods > 0 && rodIndex === fractionalRods - 1;
+
+                const denominator = isFractional ? Math.round(Math.pow(base, -power)) : 1;
+
                 return (
-                  <div
-                    key={rodIndex}
-                    id={`abacus-rod-${rodIndex}`}
-                    className={`flex flex-col items-center relative transition-all rounded-xl p-1 sm:p-2 ${
-                      isHighlighted
-                        ? 'bg-amber-500/15 ring-2 ring-amber-400 ring-offset-2 ring-offset-stone-900'
-                        : 'hover:bg-stone-800/40'
-                    }`}
-                    tabIndex={readOnly ? -1 : 0}
-                    onKeyDown={(e) => handleKeyDown(e, rodIndex)}
-                    role="group"
-                    aria-label={`Rod ${rodIndex}, Place value ${base} to the power ${rodIndex} (${placeVal}), current value ${activeCount}`}
-                  >
-                    {/* Floating Carry / Borrow Banner */}
-                    {isCarryBorrow && (
+                  <React.Fragment key={rodIndex}>
+                    {/* RADIX POINT DIVIDER */}
+                    {showRadixPointDivider && (
                       <div
-                        className={`absolute -top-7 px-2 py-0.5 rounded-md text-[11px] font-bold tracking-tight shadow-md animate-bounce z-20 whitespace-nowrap ${
-                          carryBorrowBadge.type === 'carry'
-                            ? 'bg-emerald-500 text-white'
-                            : 'bg-rose-500 text-white'
-                        }`}
+                        id="radix-point-divider"
+                        className="flex flex-col items-center justify-between self-stretch px-1 sm:px-2 z-20"
+                        title={radixName}
                       >
-                        {carryBorrowBadge.text}
+                        {/* Top Radix Badge */}
+                        <div className="flex flex-col items-center mb-2">
+                          <span className="px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-500/60 text-cyan-300 font-mono text-[9px] font-bold uppercase tracking-wider shadow-xs whitespace-nowrap">
+                            {base === 10 ? 'DECIMAL' : 'RADIX'} ( . )
+                          </span>
+                          <span className="text-[8px] text-cyan-400/80 font-mono mt-0.5 whitespace-nowrap">
+                            point
+                          </span>
+                        </div>
+
+                        {/* Middle Brass Separator with Golden Radix Point */}
+                        <div className="relative flex-1 flex flex-col items-center justify-center my-1 w-4 sm:w-6">
+                          <div className="w-0.5 h-full bg-gradient-to-b from-transparent via-cyan-400/50 to-transparent" />
+                          {/* Glowing Radix Bead Dot aligned with Counting Beam */}
+                          <div className="absolute top-1/2 -translate-y-1/2 flex flex-col items-center">
+                            <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-gradient-to-tr from-cyan-400 to-sky-200 border border-cyan-100 shadow-[0_0_12px_rgba(56,189,248,0.9)] flex items-center justify-center animate-pulse">
+                              <div className="w-1.5 h-1.5 rounded-full bg-white shadow-xs" />
+                            </div>
+                            <span className="text-[18px] sm:text-[22px] font-black leading-none text-cyan-300 select-none">
+                              .
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Bottom Radix Indicator */}
+                        <div className="mt-2.5 flex flex-col items-center">
+                          <div className="w-5 h-7 sm:w-6 sm:h-8 rounded flex items-center justify-center font-mono font-black text-lg text-cyan-300">
+                            •
+                          </div>
+                          <span className="text-[9px] text-cyan-400/70 font-mono mt-1 whitespace-nowrap">
+                            fractional →
+                          </span>
+                        </div>
                       </div>
                     )}
 
-                    {/* Rod Header: Power of Base and Multiplier */}
-                    <div className="flex flex-col items-center mb-2">
-                      <div className="px-2 py-0.5 rounded bg-stone-800/90 border border-stone-700/70 text-stone-200 text-[10px] sm:text-xs font-mono font-semibold">
-                        {base}
-                        <sup className="text-[9px] text-amber-300 font-bold ml-0.5">{rodIndex}</sup>
-                      </div>
-                      <span className="text-[10px] text-stone-400 font-mono mt-0.5">
-                        {placeVal >= 10000 ? placeVal.toExponential(0) : `×${placeVal}`}
-                      </span>
-                    </div>
+                    {/* ROD COMPONENT */}
+                    <div
+                      id={`abacus-rod-${rodIndex}`}
+                      className={`flex flex-col items-center relative transition-all rounded-xl p-1 sm:p-2 ${
+                        isHighlighted
+                          ? 'bg-amber-500/15 ring-2 ring-amber-400 ring-offset-2 ring-offset-stone-900'
+                          : isFractional
+                          ? 'bg-cyan-950/20 hover:bg-cyan-950/40 border border-cyan-800/30'
+                          : 'hover:bg-stone-800/40'
+                      }`}
+                      tabIndex={readOnly ? -1 : 0}
+                      onKeyDown={(e) => handleKeyDown(e, rodIndex)}
+                      role="group"
+                      aria-label={`Rod ${rodIndex}, Power ${power} (${
+                        isFractional ? `1/${denominator}` : placeVal
+                      }), current value ${activeCount}`}
+                    >
+                      {/* Floating Carry / Borrow Banner */}
+                      {isCarryBorrow && (
+                        <div
+                          className={`absolute -top-7 px-2 py-0.5 rounded-md text-[11px] font-bold tracking-tight shadow-md animate-bounce z-20 whitespace-nowrap ${
+                            carryBorrowBadge.type === 'carry'
+                              ? 'bg-emerald-500 text-white'
+                              : 'bg-rose-500 text-white'
+                          }`}
+                        >
+                          {carryBorrowBadge.text}
+                        </div>
+                      )}
 
-                    {/* Quick Step Up (+) button */}
-                    {!readOnly && (
-                      <button
-                        type="button"
-                        id={`rod-${rodIndex}-inc`}
-                        aria-label={`Add bead to rod ${rodIndex}`}
-                        disabled={activeCount >= maxBeadsPerRod}
-                        onClick={() => handleStepValue(rodIndex, 1)}
-                        className="w-6 h-5 rounded bg-stone-800 hover:bg-stone-700 disabled:opacity-20 disabled:hover:bg-stone-800 text-amber-200 flex items-center justify-center transition-all mb-1 cursor-pointer"
-                      >
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-
-                    {/* The Physical Rod Track with Beads & Counting Beam */}
-                    <div className="relative flex flex-col items-center w-10 sm:w-12 md:w-14">
-                      {/* Metallic Rod Wire running vertically */}
-                      <div
-                        className="absolute inset-y-0 w-1 sm:w-1.5 bg-gradient-to-r from-amber-200 via-amber-100 to-amber-300 rounded-full shadow-[0_0_5px_rgba(251,191,36,0.3)] z-0"
-                        style={{ left: 'calc(50% - 2px)' }}
-                      />
-
-                      {/* INACTIVE ZONE (Top: Beads parked away from beam) */}
-                      <div
-                        className="relative w-full flex flex-col justify-start items-center pt-1 z-10"
-                        style={{ height: `${inactiveZoneHeightPx}px` }}
-                      >
-                        {Array.from({ length: maxBeadsPerRod - activeCount }, (_, idx) => {
-                          // Inactive bead
-                          const beadPosFromBeam = activeCount + idx;
-                          return (
-                            <motion.button
-                              key={`inactive-${idx}`}
-                              type="button"
-                              layout
-                              transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-                              onClick={() => handleBeadClick(rodIndex, beadPosFromBeam)}
-                              disabled={readOnly}
-                              aria-label={`Inactive bead ${idx + 1}`}
-                              className="w-8 sm:w-10 md:w-11 rounded-full cursor-pointer transition-transform hover:scale-105 active:scale-95 z-10 my-[1px] shadow-sm relative group"
-                              style={{
-                                height: `${beadHeightPx}px`,
-                                background:
-                                  'radial-gradient(ellipse at top, #78716c 0%, #44403c 60%, #292524 100%)',
-                                border: '1px solid #57534e',
-                              }}
-                            >
-                              <div className="absolute inset-x-2 top-0.5 h-0.5 bg-white/20 rounded-full" />
-                            </motion.button>
-                          );
-                        })}
+                      {/* Rod Header: Power of Base and Multiplier / Fraction */}
+                      <div className="flex flex-col items-center mb-2">
+                        <div
+                          className={`px-2 py-0.5 rounded border text-[10px] sm:text-xs font-mono font-semibold ${
+                            isFractional
+                              ? 'bg-cyan-950/80 border-cyan-500/50 text-cyan-200'
+                              : 'bg-stone-800/90 border-stone-700/70 text-stone-200'
+                          }`}
+                        >
+                          {base}
+                          <sup
+                            className={`text-[9px] font-bold ml-0.5 ${
+                              isFractional ? 'text-cyan-300' : 'text-amber-300'
+                            }`}
+                          >
+                            {power}
+                          </sup>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono mt-0.5 ${
+                            isFractional ? 'text-cyan-300/90' : 'text-stone-400'
+                          }`}
+                        >
+                          {isFractional
+                            ? `1/${denominator}`
+                            : placeVal >= 10000
+                            ? placeVal.toExponential(0)
+                            : `×${placeVal}`}
+                        </span>
                       </div>
 
-                      {/* THE COUNTING BEAM (Horizontal Brass Inlay) */}
-                      <div className="relative w-full h-3 my-0.5 flex items-center justify-center z-15">
-                        <div className="w-full h-2 bg-gradient-to-r from-amber-700 via-amber-600 to-amber-800 rounded-xs shadow-md border-y border-amber-400/40 flex items-center justify-center">
-                          {/* Center brass bead alignment pin */}
-                          <div className="w-1.5 h-1.5 rounded-full bg-amber-200/90 shadow-xs" />
+                      {/* Quick Step Up (+) button */}
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          id={`rod-${rodIndex}-inc`}
+                          aria-label={`Add bead to rod ${rodIndex}`}
+                          disabled={activeCount >= maxBeadsPerRod}
+                          onClick={() => handleStepValue(rodIndex, 1)}
+                          className={`w-6 h-5 rounded hover:bg-stone-700 disabled:opacity-20 disabled:hover:bg-stone-800 flex items-center justify-center transition-all mb-1 cursor-pointer ${
+                            isFractional ? 'bg-cyan-950 text-cyan-300' : 'bg-stone-800 text-amber-200'
+                          }`}
+                        >
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {/* The Physical Rod Track with Beads & Counting Beam */}
+                      <div className="relative flex flex-col items-center w-10 sm:w-12 md:w-14">
+                        {/* Metallic Rod Wire running vertically */}
+                        <div
+                          className={`absolute inset-y-0 w-1 sm:w-1.5 rounded-full z-0 ${
+                            isFractional
+                              ? 'bg-gradient-to-r from-cyan-200 via-sky-100 to-cyan-300 shadow-[0_0_5px_rgba(56,189,248,0.3)]'
+                              : 'bg-gradient-to-r from-amber-200 via-amber-100 to-amber-300 shadow-[0_0_5px_rgba(251,191,36,0.3)]'
+                          }`}
+                          style={{ left: 'calc(50% - 2px)' }}
+                        />
+
+                        {/* INACTIVE ZONE (Top: Beads parked away from beam) */}
+                        <div
+                          className="relative w-full flex flex-col justify-start items-center pt-1 z-10"
+                          style={{ height: `${inactiveZoneHeightPx}px` }}
+                        >
+                          {Array.from({ length: maxBeadsPerRod - activeCount }, (_, idx) => {
+                            const beadPosFromBeam = activeCount + idx;
+                            return (
+                              <motion.button
+                                key={`inactive-${idx}`}
+                                type="button"
+                                layout
+                                transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                                onClick={() => handleBeadClick(rodIndex, beadPosFromBeam)}
+                                disabled={readOnly}
+                                aria-label={`Inactive bead ${idx + 1}`}
+                                className="w-8 sm:w-10 md:w-11 rounded-full cursor-pointer transition-transform hover:scale-105 active:scale-95 z-10 my-[1px] shadow-sm relative group"
+                                style={{
+                                  height: `${beadHeightPx}px`,
+                                  background: isFractional
+                                    ? 'radial-gradient(ellipse at top, #334155 0%, #1e293b 60%, #0f172a 100%)'
+                                    : 'radial-gradient(ellipse at top, #78716c 0%, #44403c 60%, #292524 100%)',
+                                  border: isFractional ? '1px solid #475569' : '1px solid #57534e',
+                                }}
+                              >
+                                <div className="absolute inset-x-2 top-0.5 h-0.5 bg-white/20 rounded-full" />
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+
+                        {/* THE COUNTING BEAM (Horizontal Beam) */}
+                        <div className="relative w-full h-3 my-0.5 flex items-center justify-center z-15">
+                          <div
+                            className={`w-full h-2 rounded-xs shadow-md border-y flex items-center justify-center ${
+                              isFractional
+                                ? 'bg-gradient-to-r from-cyan-800 via-sky-700 to-cyan-900 border-cyan-400/40'
+                                : 'bg-gradient-to-r from-amber-700 via-amber-600 to-amber-800 border-amber-400/40'
+                            }`}
+                          >
+                            <div
+                              className={`w-1.5 h-1.5 rounded-full shadow-xs ${
+                                isFractional ? 'bg-cyan-200/90' : 'bg-amber-200/90'
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        {/* ACTIVE ZONE (Bottom: Beads touching/slid towards the beam) */}
+                        <div
+                          className="relative w-full flex flex-col justify-start items-center pt-1 z-10"
+                          style={{ height: `${activeZoneHeightPx}px` }}
+                        >
+                          {Array.from({ length: activeCount }, (_, idx) => {
+                            return (
+                              <motion.button
+                                key={`active-${idx}`}
+                                type="button"
+                                layout
+                                transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                                onClick={() => handleBeadClick(rodIndex, idx)}
+                                disabled={readOnly}
+                                aria-label={`Active bead ${idx + 1} of ${activeCount}`}
+                                className="w-8 sm:w-10 md:w-11 rounded-full cursor-pointer transition-transform hover:scale-105 active:scale-95 z-10 my-[1px] shadow-md relative group"
+                                style={{
+                                  height: `${beadHeightPx}px`,
+                                  background: isFractional
+                                    ? 'radial-gradient(ellipse at 40% 30%, #06b6d4 0%, #0284c7 40%, #0369a1 75%, #0c4a6e 100%)'
+                                    : 'radial-gradient(ellipse at 40% 30%, #f59e0b 0%, #d97706 40%, #b45309 75%, #78350f 100%)',
+                                  border: isFractional ? '1px solid #38bdf8' : '1px solid #fbbf24',
+                                  boxShadow: isFractional
+                                    ? '0 2px 4px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.5)'
+                                    : '0 2px 4px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.4)',
+                                }}
+                              >
+                                <div className="absolute inset-x-2 top-0.5 h-0.5 bg-white/40 rounded-full" />
+                              </motion.button>
+                            );
+                          })}
                         </div>
                       </div>
 
-                      {/* ACTIVE ZONE (Bottom: Beads touching/slid towards the beam) */}
-                      <div
-                        className="relative w-full flex flex-col justify-start items-center pt-1 z-10"
-                        style={{ height: `${activeZoneHeightPx}px` }}
-                      >
-                        {Array.from({ length: activeCount }, (_, idx) => {
-                          return (
-                            <motion.button
-                              key={`active-${idx}`}
-                              type="button"
-                              layout
-                              transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-                              onClick={() => handleBeadClick(rodIndex, idx)}
-                              disabled={readOnly}
-                              aria-label={`Active bead ${idx + 1} of ${activeCount}`}
-                              className="w-8 sm:w-10 md:w-11 rounded-full cursor-pointer transition-transform hover:scale-105 active:scale-95 z-10 my-[1px] shadow-md relative group"
-                              style={{
-                                height: `${beadHeightPx}px`,
-                                background:
-                                  'radial-gradient(ellipse at 40% 30%, #f59e0b 0%, #d97706 40%, #b45309 75%, #78350f 100%)',
-                                border: '1px solid #fbbf24',
-                                boxShadow: '0 2px 4px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.4)',
-                              }}
-                            >
-                              {/* Bead Highlight / Wood Shine */}
-                              <div className="absolute inset-x-2 top-0.5 h-0.5 bg-amber-100/40 rounded-full" />
-                            </motion.button>
-                          );
-                        })}
+                      {/* Quick Step Down (-) button */}
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          id={`rod-${rodIndex}-dec`}
+                          aria-label={`Remove bead from rod ${rodIndex}`}
+                          disabled={activeCount <= 0}
+                          onClick={() => handleStepValue(rodIndex, -1)}
+                          className={`w-6 h-5 rounded hover:bg-stone-700 disabled:opacity-20 disabled:hover:bg-stone-800 flex items-center justify-center transition-all mt-1 cursor-pointer ${
+                            isFractional ? 'bg-cyan-950 text-cyan-300' : 'bg-stone-800 text-amber-200'
+                          }`}
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {/* Rod Footer: Digit and Contribution */}
+                      <div className="mt-2.5 flex flex-col items-center">
+                        <div
+                          className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-mono font-bold text-sm sm:text-base border transition-colors ${
+                            activeCount > 0
+                              ? isFractional
+                                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-xs'
+                                : 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-xs'
+                              : 'bg-stone-800 text-stone-400 border-stone-700/60'
+                          }`}
+                        >
+                          {valueToChar(activeCount)}
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono mt-1 text-center whitespace-nowrap ${
+                            isFractional ? 'text-cyan-300/80' : 'text-stone-400'
+                          }`}
+                        >
+                          {isFractional
+                            ? activeCount === 0
+                              ? '=0'
+                              : `=${activeCount}/${denominator}`
+                            : `=${activeCount * placeVal}`}
+                        </span>
                       </div>
                     </div>
-
-                    {/* Quick Step Down (-) button */}
-                    {!readOnly && (
-                      <button
-                        type="button"
-                        id={`rod-${rodIndex}-dec`}
-                        aria-label={`Remove bead from rod ${rodIndex}`}
-                        disabled={activeCount <= 0}
-                        onClick={() => handleStepValue(rodIndex, -1)}
-                        className="w-6 h-5 rounded bg-stone-800 hover:bg-stone-700 disabled:opacity-20 disabled:hover:bg-stone-800 text-amber-200 flex items-center justify-center transition-all mt-1 cursor-pointer"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-
-                    {/* Rod Footer: Digit and Contribution */}
-                    <div className="mt-2.5 flex flex-col items-center">
-                      <div
-                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-mono font-bold text-sm sm:text-base border transition-colors ${
-                          activeCount > 0
-                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-xs'
-                            : 'bg-stone-800 text-stone-400 border-stone-700/60'
-                        }`}
-                      >
-                        {valueToChar(activeCount)}
-                      </div>
-                      <span className="text-[10px] text-stone-400 font-mono mt-1 text-center whitespace-nowrap">
-                        ={activeCount * placeVal}
-                      </span>
-                    </div>
-                  </div>
+                  </React.Fragment>
                 );
               })}
             </div>

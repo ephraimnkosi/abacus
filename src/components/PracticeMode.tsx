@@ -27,17 +27,21 @@ import {
 interface PracticeModeProps {
   base: number;
   numRods: number;
+  fractionalRods?: number;
   onOpenVisualizerWithProblem?: (a: number, b: number, op: OperationType) => void;
 }
 
 export const PracticeMode: React.FC<PracticeModeProps> = ({
   base,
   numRods,
+  fractionalRods = 0,
   onOpenVisualizerWithProblem,
 }) => {
   const [opFilter, setOpFilter] = useState<OperationType | 'mixed'>('+');
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
-  const [problemType, setProblemType] = useState<'arithmetic' | 'read_abacus' | 'set_abacus'>('arithmetic');
+  const [problemType, setProblemType] = useState<
+    'arithmetic' | 'read_abacus' | 'set_abacus' | 'fraction_convert' | 'terminating_check'
+  >('arithmetic');
 
   const [problem, setProblem] = useState<PracticeProblem | null>(null);
   const [userAnswer, setUserAnswer] = useState<string>('');
@@ -75,28 +79,32 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
 
     // If type is read_abacus, initialize abacus with the operand value
     if (newProb.type === 'read_abacus') {
-      setPracticeRods(decimalToRods(newProb.operandA, base, numRods));
+      setPracticeRods(decimalToRods(newProb.operandA, base, numRods, fractionalRods));
     } else {
       setPracticeRods(new Array(numRods).fill(0));
     }
-  }, [base, numRods, opFilter, difficulty, problemType]);
+  }, [base, numRods, fractionalRods, opFilter, difficulty, problemType]);
 
   useEffect(() => {
     handleNewProblem();
   }, [handleNewProblem]);
 
-  const handleCheckAnswer = () => {
+  const handleCheckAnswer = (overrideAnswer?: string) => {
     if (!problem || evaluationResult === 'correct') return;
 
     let isCorrect = false;
 
     if (problem.type === 'set_abacus') {
-      const currentVal = rodsToDecimal(practiceRods, base);
-      isCorrect = currentVal === problem.correctAnswerDecimal;
+      const currentVal = rodsToDecimal(practiceRods, base, fractionalRods);
+      isCorrect = Math.abs(currentVal - problem.correctAnswerDecimal) < 1e-6;
     } else {
-      const cleanAnswer = userAnswer.trim().toUpperCase();
+      const answerToCheck = (overrideAnswer ?? userAnswer).trim().toUpperCase();
       const cleanTarget = problem.correctAnswer.trim().toUpperCase();
-      isCorrect = cleanAnswer === cleanTarget;
+      isCorrect =
+        answerToCheck === cleanTarget ||
+        (problem.type === 'fraction_convert' &&
+          (answerToCheck === cleanTarget.replace(/^0\./, '.') ||
+            cleanTarget === answerToCheck.replace(/^0\./, '.')));
     }
 
     if (isCorrect) {
@@ -159,6 +167,8 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
               { type: 'arithmetic', label: 'Arithmetic (+, -, ×, ÷)' },
               { type: 'read_abacus', label: 'Read Abacus' },
               { type: 'set_abacus', label: 'Set Abacus' },
+              { type: 'fraction_convert', label: 'Fraction to Radix' },
+              { type: 'terminating_check', label: 'Terminating vs Repeating' },
             ].map((item) => (
               <button
                 key={item.type}
@@ -284,36 +294,76 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
           </div>
 
           {/* Answer Input Section */}
-          <div className="mt-5 flex flex-col sm:flex-row items-center gap-3">
-            {problem.type !== 'set_abacus' && (
-              <div className="w-full sm:flex-1 relative">
-                <input
-                  id="practice-answer-input"
-                  type="text"
-                  value={userAnswer}
-                  onChange={(e) => setUserAnswer(e.target.value.toUpperCase())}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCheckAnswer();
-                  }}
-                  placeholder={`Enter answer in Base ${base} (e.g. ${config.digits.slice(0, 3).join('')})`}
-                  className="w-full bg-stone-50 border-2 border-stone-300 rounded-xl px-4 py-3 text-base sm:text-lg font-mono font-bold text-stone-900 focus:outline-none focus:border-amber-600 uppercase"
-                />
-              </div>
-            )}
+          {problem.type === 'terminating_check' ? (
+            /* Quick choice buttons for Terminating vs Repeating */
+            <div className="mt-5 flex items-center justify-center gap-4">
+              <button
+                type="button"
+                id="btn-choose-terminates"
+                onClick={() => {
+                  setUserAnswer('terminates');
+                  handleCheckAnswer('terminates');
+                }}
+                className={`px-6 py-3 rounded-xl font-bold text-sm sm:text-base border-2 transition-all cursor-pointer ${
+                  userAnswer === 'terminates'
+                    ? 'bg-amber-800 text-white border-amber-900 shadow-sm'
+                    : 'bg-stone-50 hover:bg-stone-100 text-stone-800 border-stone-300'
+                }`}
+              >
+                Terminating
+              </button>
+              <button
+                type="button"
+                id="btn-choose-repeats"
+                onClick={() => {
+                  setUserAnswer('repeats');
+                  handleCheckAnswer('repeats');
+                }}
+                className={`px-6 py-3 rounded-xl font-bold text-sm sm:text-base border-2 transition-all cursor-pointer ${
+                  userAnswer === 'repeats'
+                    ? 'bg-amber-800 text-white border-amber-900 shadow-sm'
+                    : 'bg-stone-50 hover:bg-stone-100 text-stone-800 border-stone-300'
+                }`}
+              >
+                Repeating
+              </button>
+            </div>
+          ) : (
+            <div className="mt-5 flex flex-col sm:flex-row items-center gap-3">
+              {problem.type !== 'set_abacus' && (
+                <div className="w-full sm:flex-1 relative">
+                  <input
+                    id="practice-answer-input"
+                    type="text"
+                    value={userAnswer}
+                    onChange={(e) => setUserAnswer(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCheckAnswer();
+                    }}
+                    placeholder={
+                      problem.type === 'fraction_convert'
+                        ? `e.g. 0.11 or 0.1`
+                        : `Enter answer in Base ${base} (e.g. ${config.digits.slice(0, 3).join('')})`
+                    }
+                    className="w-full bg-stone-50 border-2 border-stone-300 rounded-xl px-4 py-3 text-base sm:text-lg font-mono font-bold text-stone-900 focus:outline-none focus:border-amber-600 uppercase"
+                  />
+                </div>
+              )}
 
-            <button
-              id="practice-check-btn"
-              type="button"
-              onClick={handleCheckAnswer}
-              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-800 hover:bg-amber-900 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-sm cursor-pointer transition-all shrink-0"
-            >
-              <Sparkles className="w-4 h-4" />
-              Check Answer
-            </button>
-          </div>
+              <button
+                id="practice-check-btn"
+                type="button"
+                onClick={() => handleCheckAnswer()}
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-800 hover:bg-amber-900 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-sm cursor-pointer transition-all shrink-0"
+              >
+                <Sparkles className="w-4 h-4" />
+                Check Answer
+              </button>
+            </div>
+          )}
 
           {/* Quick Base Digits Keypad for Touch / Mobile Typing */}
-          {problem.type !== 'set_abacus' && (
+          {problem.type !== 'set_abacus' && problem.type !== 'terminating_check' && (
             <div className="mt-3 flex items-center flex-wrap gap-1.5">
               <span className="text-xs text-stone-700 font-medium mr-1">Tap digits:</span>
               {config.digits.map((digit) => (
@@ -329,6 +379,20 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
                   {digit}
                 </button>
               ))}
+              {/* Radix dot button */}
+              <button
+                type="button"
+                onClick={() => {
+                  playBeadClick(1.3);
+                  if (!userAnswer.includes('.')) {
+                    setUserAnswer((prev) => prev + '.');
+                  }
+                }}
+                className="w-8 h-8 rounded-lg bg-cyan-100 hover:bg-cyan-200 border border-cyan-300 font-mono font-bold text-base text-cyan-900 flex items-center justify-center cursor-pointer transition-colors"
+                title="Radix Point"
+              >
+                .
+              </button>
               <button
                 type="button"
                 onClick={() => setUserAnswer((prev) => prev.slice(0, -1))}
@@ -436,7 +500,8 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
               <div className="text-lg sm:text-xl font-mono font-bold text-white mb-2">
                 Correct Answer:{' '}
                 <span className="text-amber-400">
-                  {problem.correctAnswer}₍{base}₎
+                  {problem.correctAnswer}
+                  {problem.type !== 'terminating_check' && `₍${base}₎`}
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-stone-300 leading-relaxed">
@@ -471,21 +536,33 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
             Interactive Working Abacus (Scratchpad):
           </span>
           <span className="text-xs text-stone-700 font-mono">
-            Abacus Value: {decimalToBaseString(rodsToDecimal(practiceRods, base), base)}₍{base}₎ (
-            {rodsToDecimal(practiceRods, base)} dec)
+            Abacus Value:{' '}
+            {decimalToBaseString(
+              rodsToDecimal(practiceRods, base, fractionalRods),
+              base,
+              fractionalRods
+            )}
+            ₍{base}₎ ({rodsToDecimal(practiceRods, base, fractionalRods)} dec)
           </span>
         </div>
 
         <Abacus
           base={base}
           numRods={numRods}
+          fractionalRods={fractionalRods}
           rodValues={practiceRods}
           onChangeRodValue={(rodIndex, val) => {
             const next = [...practiceRods];
             next[rodIndex] = val;
             setPracticeRods(next);
             if (problem?.type === 'set_abacus') {
-              setUserAnswer(decimalToBaseString(rodsToDecimal(next, base), base));
+              setUserAnswer(
+                decimalToBaseString(
+                  rodsToDecimal(next, base, fractionalRods),
+                  base,
+                  fractionalRods
+                )
+              );
             }
           }}
           readOnly={problem?.type === 'read_abacus'}
